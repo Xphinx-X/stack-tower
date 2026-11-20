@@ -1,0 +1,179 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  GODOT_VERSION: "4.7.2"
+  GODOT_DIR: "${{ github.workspace }}/.cache/godot"
+  BUILD_TOOLS: "35.0.1"
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          sdkmanager --install "platform-tools" "platforms;android-35" "build-tools;${BUILD_TOOLS}"
+          yes | sdkmanager --licenses > /dev/null
+          echo "SDK: $ANDROID_SDK_ROOT"
+
+      - name: Cache Godot editor and export templates
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/.cache/godot
+            ~/.local/share/godot/export_templates
+          key: godot-${{ env.GODOT_VERSION }}-${{ runner.os }}
+
+      - name: Install Godot editor and export templates
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$GODOT_DIR" /tmp/godot-dl
+          BASE="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+
+          curl -sSL -o /tmp/godot-dl/editor.zip \
+            "$BASE/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q -o /tmp/godot-dl/editor.zip -d "$GODOT_DIR"
+
+          curl -sSL -o /tmp/godot-dl/templates.tpz \
+            "$BASE/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          mkdir -p /tmp/godot-dl/templates
+          unzip -q -o /tmp/godot-dl/templates.tpz -d /tmp/godot-dl/templates
+          # The .tpz layout is "templates/<files>"; locate it by version.txt.
+          SRC="$(dirname "$(find /tmp/godot-dl/templates -name version.txt | head -1)")"
+          DEST="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          mkdir -p "$DEST"
+          cp -a "$SRC/." "$DEST/"
+          ls "$DEST" | head
+
+      - name: Point Godot at the SDK and JDK
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.config/godot
+          cat > ~/.config/godot/editor_settings-4.7.tres <<EOF
+          [gd_resource type="EditorSettings" format=3]
+
+          [resource]
+          export/android/android_sdk_path = "${ANDROID_SDK_ROOT}"
+          export/android/java_sdk_path = "${JAVA_HOME}"
+          EOF
+          cat ~/.config/godot/editor_settings-4.7.tres
+
+      - name: Prepare signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -n "${KEYSTORE_BASE64:-}" ]; then
+            echo "Using keystore from ANDROID_KEYSTORE_BASE64 secret."
+            echo "$KEYSTORE_BASE64" | base64 -d > /tmp/debug.keystore
+          else
+            echo "::warning::ANDROID_KEYSTORE_BASE64 secret is missing - generating a throwaway keystore."
+            keytool -genkeypair -v \
+              -keystore /tmp/debug.keystore \
+              -storepass android -keypass android \
+              -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US" > /dev/null
+          fi
+          {
+            echo "GODOT_ANDROID_KEYSTORE_DEBUG_PATH=/tmp/debug.keystore"
+            echo "GODOT_ANDROID_KEYSTORE_DEBUG_USER=androiddebugkey"
+            echo "GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD=android"
+          } >> "$GITHUB_ENV"
+
+      - name: Import project
+        run: |
+          set -euo pipefail
+          GODOT="$GODOT_DIR/Godot_v${GODOT_VERSION}-stable_linux.x86_64"
+          "$GODOT" --headless --path . --import 2>&1 | tee /tmp/import.log
+          if grep -qE "SCRIPT ERROR|Parse Error|ERROR: .*Failed" /tmp/import.log; then
+            echo "::error::Project import reported errors."
+            exit 1
+          fi
+
+      - name: Unit tests (placement math)
+        run: |
+          GODOT="$GODOT_DIR/Godot_v${GODOT_VERSION}-stable_linux.x86_64"
+          "$GODOT" --headless --path . --script res://tests/test_placement.gd
+
+      - name: Smoke test (game scene)
+        run: |
+          GODOT="$GODOT_DIR/Godot_v${GODOT_VERSION}-stable_linux.x86_64"
+          "$GODOT" --headless --path . res://tests/smoke.tscn 2>&1 | tee /tmp/smoke.log
+          test "${PIPESTATUS[0]}" -eq 0
+          if grep -qE "SCRIPT ERROR|Parse Error" /tmp/smoke.log; then
+            echo "::error::Smoke test logged script errors."
+            exit 1
+          fi
+
+      - name: Export debug APK
+        run: |
+          set -euo pipefail
+          GODOT="$GODOT_DIR/Godot_v${GODOT_VERSION}-stable_linux.x86_64"
+          mkdir -p build
+          "$GODOT" --headless --path . --export-debug "Android" build/stack-tower.apk
+
+      - name: Verify APK
+        run: |
+          set -euo pipefail
+          APK=build/stack-tower.apk
+          ls -lh "$APK"
+          BT="$ANDROID_SDK_ROOT/build-tools/${BUILD_TOOLS}"
+          "$BT/aapt2" dump badging "$APK" | grep -E \
+            "^(package|application-label|launchable-activity|native-code|sdkVersion|targetSdkVersion)"
+          "$BT/apksigner" verify --print-certs "$APK"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stack-tower-apk
+          path: build/stack-tower.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish rolling release (latest-build)
+        if: github.ref_type == 'branch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-build
+          name: Stack Tower - latest build
+          body: |
+            Automatic build of `${{ github.sha }}` from `${{ github.ref_name }}`.
+
+            **Install:** download `stack-tower.apk` below on your Android phone and
+            allow installing from unknown sources when prompted.
+          files: build/stack-tower.apk
+          prerelease: true
+          make_latest: false
+
+      - name: Publish versioned release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Stack Tower ${{ github.ref_name }}
+          generate_release_notes: true
+          files: build/stack-tower.apk

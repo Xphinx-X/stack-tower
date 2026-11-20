@@ -1,0 +1,23 @@
+# Godot
+.godot/
+*.translation
+
+# Build output
+build/
+*.apk
+*.aab
+*.pck
+*.zip
+
+# Signing material (never commit)
+*.keystore
+*.jks
+export_credentials.cfg
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+*.tmp
+
+# Local CI cache
+.cache/
