@@ -1,12 +1,12 @@
 class_name Hud
 extends CanvasLayer
 
-## Screen-space UI: score, title screen, game over panel and popup feedback.
+## Screen-space UI: score, title screen, game over panel, popups and flashes.
 
 const TEXT := Color(0.97, 0.97, 1.0)
 const OUTLINE := Color(0.04, 0.03, 0.10, 0.85)
 const ACCENT := Color(0.42, 0.93, 0.76)
-const DIM := Color(0.03, 0.02, 0.08, 0.66)
+const DIM := Color(0.03, 0.02, 0.08, 0.68)
 
 var _vs := Vector2(1080.0, 1920.0)
 var _s := 1.0
@@ -21,6 +21,8 @@ var _over_root: Control
 var _over_score: Label
 var _over_best: Label
 var _over_tap: Label
+
+var _flash: ColorRect
 
 var _t := 0.0
 
@@ -45,8 +47,15 @@ func relayout(view_size: Vector2) -> void:
 	_title_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_title_root.offset_bottom = -_vs.y * 0.16
 
-func set_score(value: int) -> void:
+func set_score(value: int, pop: bool = true) -> void:
 	_score.text = str(value)
+	if not pop or _score.size.x <= 0.0:
+		return
+	_score.pivot_offset = _score.size * 0.5
+	_score.scale = Vector2(1.16, 1.16)
+	var tween := create_tween()
+	tween.tween_property(_score, "scale", Vector2.ONE, 0.2) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 func set_best(value: int) -> void:
 	_best.text = "BEST %d" % value
@@ -54,6 +63,7 @@ func set_best(value: int) -> void:
 func show_title(best: int) -> void:
 	_best.text = "BEST %d" % best
 	_score.text = "0"
+	_score.scale = Vector2.ONE
 	_title_root.visible = true
 	_title_root.modulate.a = 1.0
 	_over_root.visible = false
@@ -73,6 +83,11 @@ func show_game_over(final_score: int, best: int, is_new_best: bool) -> void:
 
 func hide_game_over() -> void:
 	_over_root.visible = false
+
+func flash(color: Color, peak: float) -> void:
+	_flash.color = Color(color.r, color.g, color.b, peak)
+	var tween := create_tween()
+	tween.tween_property(_flash, "color:a", 0.0, 0.3).set_ease(Tween.EASE_OUT)
 
 func popup(text: String, color: Color, screen_pos: Vector2) -> void:
 	var label := _make_label(text, 58, color)
@@ -103,11 +118,11 @@ func _build() -> void:
 
 	var title_box := VBoxContainer.new()
 	title_box.alignment = BoxContainer.ALIGNMENT_CENTER
-	title_box.add_theme_constant_override("separation", 18)
+	title_box.add_theme_constant_override("separation", 14)
 	_title_root.add_child(title_box)
 
-	title_box.add_child(_make_label("STACK", 128, TEXT))
-	title_box.add_child(_make_label("TOWER", 128, ACCENT))
+	title_box.add_child(_make_label("STACK", 132, TEXT))
+	title_box.add_child(_make_label("TOWER", 132, ACCENT))
 	_title_tap = _make_label("TAP TO START", 52, Color(0.85, 0.86, 0.97))
 	title_box.add_child(_title_tap)
 
@@ -131,7 +146,7 @@ func _build() -> void:
 
 	var over_box := VBoxContainer.new()
 	over_box.alignment = BoxContainer.ALIGNMENT_CENTER
-	over_box.add_theme_constant_override("separation", 26)
+	over_box.add_theme_constant_override("separation", 24)
 	over_center.add_child(over_box)
 
 	over_box.add_child(_make_label("GAME OVER", 104, TEXT))
@@ -141,6 +156,13 @@ func _build() -> void:
 	over_box.add_child(_over_best)
 	_over_tap = _make_label("TAP TO RESTART", 50, Color(0.85, 0.86, 0.97))
 	over_box.add_child(_over_tap)
+
+	# Full-screen flash, always on top.
+	_flash = ColorRect.new()
+	_flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_flash.color = Color(1.0, 1.0, 1.0, 0.0)
+	_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_flash)
 
 func _make_label(text: String, px: int, color: Color) -> Label:
 	var label := Label.new()
