@@ -29,14 +29,31 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Install Android SDK packages
         run: |
-          sdkmanager --install "platform-tools" "platforms;android-35" "build-tools;${BUILD_TOOLS}"
-          yes | sdkmanager --licenses > /dev/null
-          echo "SDK: $ANDROID_SDK_ROOT"
+          set -euo pipefail
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          export ANDROID_SDK_ROOT="$SDK"
+          export ANDROID_HOME="$SDK"
+
+          SDKMANAGER="$(find "$SDK" -maxdepth 4 -type f -name sdkmanager 2>/dev/null | head -1)"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager not found, downloading Android command-line tools..."
+            curl -sSL -o /tmp/cmdline-tools.zip \
+              "https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip"
+            unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools
+            mkdir -p "$SDK/cmdline-tools"
+            mv /tmp/cmdline-tools/cmdline-tools "$SDK/cmdline-tools/latest"
+            SDKMANAGER="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          echo "Using sdkmanager: $SDKMANAGER"
+
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" --install "platform-tools" "platforms;android-35" "build-tools;${BUILD_TOOLS}"
+
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "SDK ready at $SDK"
 
       - name: Cache Godot editor and export templates
         id: godot-cache
