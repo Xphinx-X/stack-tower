@@ -11,7 +11,7 @@ so the whole game is ~700 lines of code and builds in minutes.
 ## Play
 
 1. Open the [latest build release](../../releases/tag/latest-build) on your phone.
-2. Download `stack-tower.apk`.
+2. Download `stack-tower.apk` (~28 MB).
 3. Install it (allow "install unknown apps" for your browser/file manager when asked).
 
 Requires Android 7.0+ (minSdk 24), `arm64-v8a`.
@@ -99,6 +99,15 @@ The APK is **debug-signed**. CI uses a fixed keystore stored in the
 `ANDROID_KEYSTORE_BASE64` repository secret, so consecutive builds share the same
 signature and install over each other without uninstalling. If the secret is missing,
 CI falls back to a throwaway keystore (you then have to uninstall before upgrading).
+
+The same keystore is backed up outside the repo at `~/.config/stack-tower/debug.keystore`
+(alias `androiddebugkey`, store/key password `android`). Keep it if you want future
+builds to stay installable over the current one:
+
+```bash
+base64 -w0 ~/.config/stack-tower/debug.keystore \
+  | gh secret set ANDROID_KEYSTORE_BASE64 --repo Xphinx-X/stack-tower
+```
 
 For a Play Store release you need a release keystore and an `.aab`:
 
