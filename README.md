@@ -8,6 +8,12 @@ so the whole game is ~700 lines of code and builds in minutes.
   <img src="icon.png" width="180" alt="Stack Tower icon">
 </p>
 
+<p align="center">
+  <img src="docs/screenshot-title.png" width="240" alt="Title screen">
+  <img src="docs/screenshot-playing.png" width="240" alt="Stacking blocks">
+  <img src="docs/screenshot-gameover.png" width="240" alt="Game over">
+</p>
+
 ## Play
 
 1. Open the [latest build release](../../releases/tag/latest-build) on your phone.
@@ -25,8 +31,10 @@ A block slides back and forth above the tower. **Tap anywhere** to drop it.
 - Miss completely (or leave a sliver thinner than 26 px) → game over.
 - Your best score is stored locally (`user://stack_tower.cfg`).
 
-The scoring block speed ramps up as you climb, and the palette shifts hue with every layer.
-Haptics fire on perfect drops and game over.
+The block speed ramps up as you climb, and every layer picks the next colour from
+a hand-tuned palette. Perfect drops fire sparks, a squash-and-stretch landing and a
+screen flash; a heavy landing shakes the screen. Haptics fire on perfect drops and
+game over.
 
 ## Project layout
 
@@ -35,10 +43,14 @@ project.godot              Godot project (portrait 1080x1920, GL Compatibility)
 main.tscn                  Minimal scene: a Node2D with scripts/game.gd
 scripts/game.gd            Game loop, placement math, scoring, audio, saves
 scripts/block.gd           Procedurally drawn block (StyleBoxFlat, no textures)
-scripts/hud.gd             Score, title screen, game over panel, popups
-shaders/background.gdshader  Animated gradient background
+scripts/hud.gd             Score, title screen, game over card, popups, flashes
+scripts/backdrop.gd        Parallax bokeh that scrolls with the tower
+scripts/ground.gd          Lit platform the tower is built on
+scripts/spark.gd           Debris particles for impact feedback
+shaders/background.gdshader  Animated gradient background with vignette
 tests/test_placement.gd    Headless unit tests for the placement math
 tests/smoke.tscn/.gd       Headless integration test of the real game scene
+tests/screenshot.tscn/.gd  Renders the game and saves PNG screenshots (needs a display)
 tools/make_icons.py        Zero-dependency PNG generator for the launcher icons
 export_presets.cfg         Android export preset (debug-signed APK)
 .github/workflows/build.yml  CI: tests + APK build + release upload
@@ -78,6 +90,10 @@ godot --headless --path . res://tests/smoke.tscn
 
 # Play on desktop (mouse click or Space = tap)
 godot --path .
+
+# Render screenshots into $SHOT_DIR (needs a display, e.g. xvfb-run on a server)
+xvfb-run -a godot --path . --rendering-driver opengl3 --resolution 1080x1920 \
+  res://tests/screenshot.tscn
 ```
 
 To export from your own machine, open the project in the editor, install the Android
@@ -86,8 +102,11 @@ export templates, set the SDK path in *Editor Settings → Export → Android*, 
 
 ## Versioning a release
 
+CI stamps the APK version itself: `version/code` becomes `1000 + <workflow run number>`
+(so every build installs over the previous one) and `version/name` comes from the tag.
+So a release is just:
+
 ```bash
-# bump the version in project.godot / export_presets.cfg, then:
 git tag v1.1 && git push origin v1.1
 ```
 

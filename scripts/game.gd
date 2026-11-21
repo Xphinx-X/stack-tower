@@ -244,8 +244,9 @@ func _on_tap() -> void:
 
 	match state:
 		State.READY:
+			# Start the run without dropping: the first block is aimed by the
+			# player instead of landing wherever the title screen left it.
 			begin_play()
-			drop_block()
 		State.PLAYING:
 			drop_block()
 		State.GAMEOVER:

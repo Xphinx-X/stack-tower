@@ -146,6 +146,21 @@ jobs:
             exit 1
           fi
 
+      - name: Stamp build version
+        run: |
+          set -euo pipefail
+          # Every CI build gets a unique, increasing version code so it can be
+          # installed straight over an older build on the phone.
+          CODE=$(( 1000 + ${GITHUB_RUN_NUMBER:-1} ))
+          if [ "${GITHUB_REF_TYPE:-branch}" = "tag" ]; then
+            NAME="${GITHUB_REF_NAME#v}"
+          else
+            NAME="1.1.${GITHUB_RUN_NUMBER:-0}"
+          fi
+          sed -i -E "s|^version/code=.*|version/code=${CODE}|" export_presets.cfg
+          sed -i -E "s|^version/name=.*|version/name=\"${NAME}\"|" export_presets.cfg
+          grep -E "^version/(code|name)=" export_presets.cfg
+
       - name: Export debug APK
         run: |
           set -euo pipefail

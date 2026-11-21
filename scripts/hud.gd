@@ -6,7 +6,7 @@ extends CanvasLayer
 const TEXT := Color(0.97, 0.97, 1.0)
 const OUTLINE := Color(0.04, 0.03, 0.10, 0.85)
 const ACCENT := Color(0.42, 0.93, 0.76)
-const DIM := Color(0.03, 0.02, 0.08, 0.68)
+const DIM := Color(0.03, 0.02, 0.08, 0.52)
 
 var _vs := Vector2(1080.0, 1920.0)
 var _s := 1.0
@@ -18,11 +18,14 @@ var _title_root: Control
 var _title_tap: Label
 
 var _over_root: Control
+var _card: PanelContainer
 var _over_score: Label
 var _over_best: Label
 var _over_tap: Label
 
 var _flash: ColorRect
+var _dim_layer: CanvasLayer
+var _dim: ColorRect
 
 var _t := 0.0
 
@@ -32,7 +35,7 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_t += delta
-	var pulse := 0.55 + 0.45 * sin(_t * 3.2)
+	var pulse := 0.78 + 0.22 * sin(_t * 3.2)
 	if is_instance_valid(_title_tap):
 		_title_tap.modulate.a = pulse
 	if is_instance_valid(_over_tap):
@@ -78,11 +81,16 @@ func show_game_over(final_score: int, best: int, is_new_best: bool) -> void:
 	_over_best.add_theme_color_override("font_color", ACCENT if is_new_best else TEXT)
 	_over_root.visible = true
 	_over_root.modulate.a = 0.0
+	_dim_layer.visible = true
+	_dim.color = Color(DIM.r, DIM.g, DIM.b, 0.0)
 	var tween := create_tween()
+	tween.set_parallel(true)
 	tween.tween_property(_over_root, "modulate:a", 1.0, 0.22)
+	tween.tween_property(_dim, "color:a", DIM.a, 0.22)
 
 func hide_game_over() -> void:
 	_over_root.visible = false
+	_dim_layer.visible = false
 
 func flash(color: Color, peak: float) -> void:
 	_flash.color = Color(color.r, color.g, color.b, peak)
@@ -103,6 +111,17 @@ func popup(text: String, color: Color, screen_pos: Vector2) -> void:
 # ------------------------------------------------------------------ internals
 
 func _build() -> void:
+	_dim_layer = CanvasLayer.new()
+	_dim_layer.layer = layer - 1
+	_dim_layer.visible = false
+	add_child(_dim_layer)
+
+	_dim = ColorRect.new()
+	_dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_dim.color = Color(DIM.r, DIM.g, DIM.b, 0.0)
+	_dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_dim_layer.add_child(_dim)
+
 	_score = _make_label("0", 132, TEXT)
 	_score.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
 	add_child(_score)
@@ -133,23 +152,40 @@ func _build() -> void:
 	_over_root.visible = false
 	add_child(_over_root)
 
-	var dim := ColorRect.new()
-	dim.color = DIM
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_over_root.add_child(dim)
-
 	var over_center := CenterContainer.new()
 	over_center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	over_center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_over_root.add_child(over_center)
 
+	# A dark card keeps the panel readable no matter what is behind it.
+	_card = PanelContainer.new()
+	_card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var card_style := StyleBoxFlat.new()
+	card_style.bg_color = Color(0.055, 0.048, 0.13, 0.94)
+	card_style.corner_radius_top_left = 36
+	card_style.corner_radius_top_right = 36
+	card_style.corner_radius_bottom_left = 36
+	card_style.corner_radius_bottom_right = 36
+	card_style.border_width_left = 2
+	card_style.border_width_right = 2
+	card_style.border_width_top = 2
+	card_style.border_width_bottom = 2
+	card_style.border_color = Color(0.58, 0.47, 1.0, 0.38)
+	card_style.content_margin_left = 48
+	card_style.content_margin_right = 48
+	card_style.content_margin_top = 44
+	card_style.content_margin_bottom = 44
+	card_style.shadow_color = Color(0.0, 0.0, 0.0, 0.5)
+	card_style.shadow_size = 26
+	_card.add_theme_stylebox_override("panel", card_style)
+	over_center.add_child(_card)
+
 	var over_box := VBoxContainer.new()
 	over_box.alignment = BoxContainer.ALIGNMENT_CENTER
-	over_box.add_theme_constant_override("separation", 24)
-	over_center.add_child(over_box)
+	over_box.add_theme_constant_override("separation", 22)
+	_card.add_child(over_box)
 
-	over_box.add_child(_make_label("GAME OVER", 104, TEXT))
+	over_box.add_child(_make_label("GAME OVER", 96, TEXT))
 	_over_score = _make_label("SCORE  0", 66, TEXT)
 	over_box.add_child(_over_score)
 	_over_best = _make_label("BEST  0", 48, Color(0.82, 0.83, 0.95))
@@ -190,6 +226,9 @@ func _apply_layout() -> void:
 	_score.offset_bottom = _score.offset_top + int(160 * _s)
 	_best.offset_top = _score.offset_bottom - int(16 * _s)
 	_best.offset_bottom = _best.offset_top + int(56 * _s)
+
+	if _card != null:
+		_card.custom_minimum_size = Vector2(760.0 * _s, 0.0)
 
 func _collect_labels(node: Node, out: Array[Label]) -> void:
 	for child in node.get_children():
